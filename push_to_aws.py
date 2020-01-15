@@ -3,7 +3,7 @@ from AWSIoTPythonSDK.MQTTLib import AWSIoTMQTTShadowClient
 import json
 import logging
 
-logging.basicConfig(filename='mqtt_publish.log', filemode='w', format='push_to_aws.py - %(levelname)s - %(message)s', level=logging.INFO)
+logging.basicConfig(filename='mqtt_publish.log', filemode='w', format='%(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 def customCallback(message, something, meh):
     json_object = json.loads(message)
