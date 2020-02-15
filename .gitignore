@@ -1,1 +1,7 @@
 *.log
+*.cer
+*.pem
+*.key
+*.csr
+*.json
+.DS_Store
