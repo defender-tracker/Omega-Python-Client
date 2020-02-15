@@ -1,1 +1,3 @@
 AWSIoTPythonSDK
+pyserial
+pynmea2

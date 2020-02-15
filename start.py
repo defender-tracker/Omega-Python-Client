@@ -12,39 +12,46 @@ logging.basicConfig(filename='/root/mqtt_publish.log', filemode='w', format='%(n
 from utils.nmea import GNSS_Blob
 from utils.aws import MQTT
 from utils.monitor import UpdateMonitor
+from utils.error_handling import error_message
 
 # Signal handler
 def signal_handler(signal, frame):
 	global interrupted
 	interrupted = True
 	return
-	
-def error_message(err):
-	template = "An exception of type {0} occurred. Arguments:\n{1!r}"
-	message = template.format(type(err).__name__, err.args)
-	return message
 
-# Ctrl+C
-signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+signal.signal(signal.SIGTSTP, signal_handler) # Ctrl+Z
 
-# Ctrl+Z
-signal.signal(signal.SIGTSTP, signal_handler)
+##
+## MQTT stuff
+##
+
+mqtt = MQTT()
+mqtt.connect()
+
+def monitor_callback(point):
+	mqtt.send(point)
+
+##
+## Monitor stuff
+##
+
+monitor = UpdateMonitor(update_callback = monitor_callback)
+
+##
+## GNSS stuff
+##
+
+blob = GNSS_Blob()
+
+##
+## Main loop
+##
 
 # Global and local variables	
 interrupted = False
 locked = False
-
-reader = pynmea2.NMEAStreamReader()
-mqtt = MQTT()
-mqtt.connect()
-
-blob = GNSS_Blob()
-monitor = UpdateMonitor()
-
-def monitor_callback(point):
-	mqtt.send(point)
-	
-monitor.accepted_callback = monitor_callback
 
 # Read serial data in an endless loop
 with serial.Serial('/dev/ttyUSB1', timeout = 0.1) as tty:
