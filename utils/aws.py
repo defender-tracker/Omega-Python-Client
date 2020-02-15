@@ -7,8 +7,6 @@ import logging
 #logging.basicConfig(filename='/root/mqtt_publish.log', filemode='w', format='%(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logging.info('Creating and configuring MQTT client')
 
-
-
 def custom_callback(message, something, meh):
 	json_object = json.loads(message)
 	formatted_message = json.dumps(json_object, indent=2)
