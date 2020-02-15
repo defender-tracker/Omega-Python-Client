@@ -21,7 +21,7 @@ def signal_handler(signal, frame):
 	
 def error_message(err):
 	template = "An exception of type {0} occurred. Arguments:\n{1!r}"
-	message = template.format(type(ex).__name__, ex.args)
+	message = template.format(type(err).__name__, err.args)
 	return message
 
 # Ctrl+C

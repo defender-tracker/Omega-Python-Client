@@ -14,7 +14,7 @@ You should only need to clone this repository and then run:
 ```pip install -r requirements.txt```
 
 followed by:
-```python push_to_aws.py```
+```python test.py```
 
 ## Branching
 If you want to add capability to this file, create a branch and then raise a pull request to merge changes into the master branch.

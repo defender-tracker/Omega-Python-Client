@@ -12,5 +12,5 @@ o2lte gnss enable
 /etc/init.d/ugps disable
 
 # Start the Python client
-python3 /root/connect_device_package/test.py &
+python3 /root/connect_device_package/start.py &
 
