@@ -1,8 +1,4 @@
 # Imports
-from utils.error_handling import error_message
-from utils.monitor import UpdateMonitor
-from utils.aws import MQTT
-from utils.nmea import GNSS_Blob
 import serial
 import datetime
 import time
@@ -17,174 +13,173 @@ from persistqueue import Queue
 ts = datetime.datetime.timestamp(datetime.datetime.now())
 
 logging.basicConfig(
-    filename='/mnt/mmcblk0p1/logs_' + str(ts) + '.log',
-    filemode='w',
-    format='%(asctime)s - %(name)s - %(filename)s(%(lineno)d) - %(levelname)s - %(message)s',
-    level=logging.DEBUG
+	filename='/mnt/mmcblk0p1/logs_' + str(ts) + '.log',
+	filemode='w',
+	format='%(asctime)s - %(name)s - %(filename)s(%(lineno)d) - %(levelname)s - %(message)s',
+	level=logging.DEBUG
 )
 
+from utils.nmea import GNSS_Blob
+from utils.aws import MQTT
+from utils.monitor import Sampler
+from utils.error_handling import error_message
 
 # Signal handler
-
 def signal_handler(signal, frame):
-    global interrupted
-    interrupted = True
-    return
-
+	global interrupted
+	interrupted = True
+	return
 
 signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
-signal.signal(signal.SIGTSTP, signal_handler)  # Ctrl+Z
+signal.signal(signal.SIGTSTP, signal_handler) # Ctrl+Z
 
 ##
-# MQTT stuff
+## MQTT stuff
 ##
 
 mqtt = MQTT()
 mqtt.connect()
-
+	
 ##
-# Queue
+## Queue
 ##
-
+	
 q = Queue(path="/mnt/mmcblk0p1/queue")
-
 
 def worker():
     while True:
         item = q.get()
         if mqtt.send(item):
-            logging.info("Send was successful")
-            q.task_done()
-
+        	logging.info("Send was successful")
+	        q.task_done()
 
 for i in range(2):
-    t = Thread(target=worker)
-    t.daemon = True
-    t.start()
+     t = Thread(target=worker)
+     t.daemon = True
+     t.start()
 
 ##
-# Monitor stuff
+## Monitor stuff
 ##
-
 
 def monitor_callback(point):
-        # mqtt.send(point)
-    q.put(point)
+	#mqtt.send(point)
+	q.put(point)
 
-
-monitor = UpdateMonitor(update_callback=monitor_callback)
+sampler = Sampler(update_callback = monitor_callback)
 
 ##
-# GNSS stuff
+## GNSS stuff
 ##
 
 blob = GNSS_Blob()
 
 
 def settings_update(config):
-    try:
-        if config.get('sampling_distance'):
-            monitor.set_sampling_distance(config.get('sampling_distance'))
-        else:
-            # set default value
-            config['sampling_distance'] = 500
-
-        if config.get('pause_distance'):
-            monitor.set_pause_distance(config.get('pause_distance'))
-        else:
-            config['pause_distance'] = 0.5
-
-        if config.get('resume_distance'):
-            monitor.set_resume_distance(config.get('resume_distance'))
-        else:
-            config['resume_distance'] = 2
-
-        if config.get('moving_average_length'):
-            monitor.set_moving_average_length(
-                config.get('moving_average_length'))
-        else:
-            config['moving_average_length'] = 10
-
-    except Exception as e:
-        logging.error(error_message(e))
-        pass
-
-
-with shelve.open('config') as config:
+	try:
+		if config.get('sampling_distance'):
+			sampler.set_sampling_distance(config.get('sampling_distance'))
+		else:
+			# set default value
+			config['sampling_distance'] = 500
+			
+		if config.get('pause_distance'):
+			sampler.set_pause_distance(config.get('pause_distance'))
+		else:
+			config['pause_distance'] = 0.5
+			
+		if config.get('resume_distance'):
+			sampler.set_resume_distance(config.get('resume_distance'))
+		else:
+			config['resume_distance'] = 2
+			
+		if config.get('moving_average_length'):
+			sampler.set_moving_average_length(config.get('moving_average_length'))
+		else:
+			config['moving_average_length'] = 20
+		
+	except Exception as e:
+		logging.error(error_message(e))
+		pass
+	
+with shelve.open('/root/config') as config:
     settings_update(config)
     config.close()
 
 ##
-# Main loop
+## Main loop
 ##
 
-# Global and local variables
+# Global and local variables	
 interrupted = False
 locked = False
 
 # Read serial data in an endless loop
-with serial.Serial('/dev/ttyUSB1', timeout=0.1) as tty:
+with serial.Serial('/dev/ttyUSB1', timeout = 0.1) as tty:
 
-    while not interrupted:
-        try:
-            # Read data line from serial
-            line = tty.readline()
-            line = line.decode('utf-8').strip()
-
-            if len(line) > 6:
-                sentence_type = line[1:6]
-                try:
-                    msg = pynmea2.parse(line)
-                except Exception as e:
-                    logging.error(error_message(e))
-                    continue
-
-                if not locked:
-                    if msg.sentence_type == 'GSV':
-                        # GPS Satellites in view
-                        blob.add_satellite(msg)
-
-                    locked = blob.check_satellites()
-
-                else:
-                    if msg.sentence_type == 'GGA':
-                        # Global Positioning System Fix Data
-                        blob.add_fix_data(msg)
-
-                    elif msg.sentence_type == 'VTG':
-                        # Track made good and ground speed
-                        blob.add_track_and_ground_speed(msg)
-
-                    elif msg.sentence_type == 'RMC':
-                        # Recommended minimum specific GPS/Transit data
-                        blob.add_minimum_transit_data(msg)
-
-                    elif msg.sentence_type == 'GSA':
-                        # GPS DOP and active satellites
-                        blob.add_DOP(msg)
-
-                if blob.is_complete():
-                    #logging.DEBUG("Data captured - store/send")
-                    minimal, full = blob.get_base_information()
-                    monitor.process(minimal)
-
-                    try:
-                        with shelve.open('/mnt/mmcblk0p1/raw' + str(ts) + '.db') as raw:
-                            raw[str(minimal.get('t'))] = full
-                            raw.close()
-                    except Exception as e:
-                        logging.error("Failed to persit raw data")
-                        logging.error(error_message(e))
-                        continue
-
-            else:
-                locked = False
-                blob.reset()
-
-        except Exception as e:
-            logging.error("Exception in Main")
-            logging.error(error_message(e))
-            continue
-
+	while not interrupted:
+		try:
+			# Read data line from serial
+			line = tty.readline()
+			line = line.decode('utf-8').strip()
+			
+			if len(line) > 6:
+				sentence_type = line[1:6]
+				try:
+					msg = pynmea2.parse(line)
+				except Exception as e:
+					logging.error(error_message(e))
+					continue
+					
+				if not locked:
+					if msg.sentence_type == 'GSV':
+						# GPS Satellites in view
+						blob.add_satellite(msg)
+						
+					locked = blob.check_satellites()	
+					
+				else:
+					if msg.sentence_type == 'GGA':
+						# Global Positioning System Fix Data
+						blob.add_fix_data(msg)
+						
+					elif msg.sentence_type == 'VTG':
+						# Track made good and ground speed
+						blob.add_track_and_ground_speed(msg)
+						
+					elif msg.sentence_type == 'RMC':
+						# Recommended minimum specific GPS/Transit data
+						blob.add_minimum_transit_data(msg)
+						
+					elif msg.sentence_type == 'GSA':
+						# GPS DOP and active satellites
+						blob.add_DOP(msg)
+						
+				if blob.is_complete():
+					#logging.DEBUG("Data captured - store/send")
+					minimal, full = blob.get_base_information()
+					sampler.process_update(minimal)
+					
+					try:
+						with shelve.open('/mnt/mmcblk0p1/raw' + str(ts) + '.db') as raw:
+							raw[str(minimal.get('t'))] = full
+							raw.close()
+					except Exception as e:
+						logging.error("Failed to persit raw data")
+						logging.error(error_message(e))
+						continue
+					
+			else:
+				locked = False
+				blob.reset()
+				
+		except Exception as e:
+			logging.error("Exception in Main")
+			logging.error(error_message(e))
+			continue
+	
 # Graceful close down
 logging.info("Graceful close down")
+
+
+
