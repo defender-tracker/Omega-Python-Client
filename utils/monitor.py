@@ -8,7 +8,16 @@ from utils.error_handling import error_message
 
 class Sampler():
     
-    def __init__(self, sampling_distance=200, pause_distance=0.5, resume_distance=5, moving_average_length=20, update_callback=None):
+    def __init__(
+        self,
+        minimum_sampling_distance=50,
+        maximum_sampling_distance=30000,
+        x_max=0.15,
+        pause_distance=0.5,
+        resume_distance=5,
+        moving_average_length=20,
+        update_callback=None
+        ):
 
         self.__reset()
         
@@ -16,8 +25,12 @@ class Sampler():
             'sampler_history'
         )
 
-        self._sampling_distance = sampling_distance
+        self._maximum_sampling_distance = maximum_sampling_distance
+        self._minimum_sampling_distance = minimum_sampling_distance
+        self._x_max = x_max
+        
         self._update_callback = update_callback
+        
         self._pause_distance = pause_distance
         self._resume_distance = resume_distance
         self._moving_average_length = moving_average_length
@@ -70,7 +83,10 @@ class Sampler():
 
         return self._planet_radius * c
     
-    def __dynamic_sampling_function(self, x, minimum=100, maximum=10000, x_max=0.1):
+    def __dynamic_sampling_function(self, x):
+        minimum = self._minimum_sampling_distance
+        maximum = self._maximum_sampling_distance
+        x_max = self._x_max
         return (minimum*x_max)/(x + ((x_max*minimum)/maximum))
 
     def __calc_averages(self):
@@ -129,22 +145,22 @@ class Sampler():
         keys = list(self._history.keys())
         keys.sort(key=int)
         
-        for key in keys:  
+        for key in keys:
             if int(key) <= latest_key:
                 del(self._history[str(key)])
                 
         minimised = {
-        	't': _update.get('timestamp'),
-        	'lon': _update.get('longitude'),
-        	'lat': _update.get('latitude'),
-        	's': _update.get('speed'),
-        	'c': _update.get('course'),
-        	'a': _update.get('altitude')
+            't': _update.get('timestamp'),
+            'lon': _update.get('longitude'),
+            'lat': _update.get('latitude'),
+            's': _update.get('speed'),
+            'c': _update.get('course'),
+            'a': _update.get('altitude')
         }
         
         self._update_callback(minimised)
         
-    def __process_history(self, _ratio):        
+    def __process_history(self, _ratio):
         _sampling_distance = self.__dynamic_sampling_function(_ratio)
                 
         keys = list(self._history.keys())
@@ -154,7 +170,7 @@ class Sampler():
         
         prev_historic_update = {}
         
-        for key in keys:            
+        for key in keys:
             historic_update = self._history.get(key)
             
             if len(prev_historic_update) > 0:
@@ -164,7 +180,7 @@ class Sampler():
                 _historic_cum_delta += prev_delta
                 prev_historic_update = historic_update
 
-                if _historic_cum_delta > _sampling_distance:                    
+                if _historic_cum_delta > _sampling_distance:
                     logging.debug("Monitor - Normal")
                     self.__call_callback(historic_update)
                     _historic_cum_delta = 0
